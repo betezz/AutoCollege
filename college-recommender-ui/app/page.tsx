@@ -1,6 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Select from 'react-select';
+import { STATES, MAJORS, DEMOGRAPHICS, SPECIAL_CIRCUMSTANCES, SCHOLARSHIP_PREFERENCES } from './data/datas';
+import TestScores from './components/Components';
+import { TEST_RANGES } from './utils/constants/TestRanges';
 
 const GPA_SCALES = {
   '4.0 Unweighted': { min: 0, max: 4.0 },
@@ -8,22 +12,67 @@ const GPA_SCALES = {
   '100 Scale': { min: 0, max: 100 },
 };
 
+interface StateOption {
+  value: string;
+  label: string;
+}
+
+interface MajorOption {
+  value: string;
+  label: string;
+}
+
+interface DemographicsOption {
+  value: string;
+  label: string;
+}
+
+interface SpecialCircumstancesOption {
+  value: string;
+  label: string;
+}
+
+interface ScholarshipPreferencesOption {
+  value: string;
+  label: string;
+}
+
 export default function Scholarships() {
   const [studentData, setStudentData] = useState({
     gpa: '',
     gpaScale: '4.0 Unweighted',
-    major: '',
+    major: null as MajorOption | null,
     gradeLevel: '',
-    extracurriculars: '',
-    state: '',
+    state: null as StateOption | null,
+    testScores: [] as { test: string; score: string }[],
+    financialNeedIncome: '',
+    demographics: [] as DemographicsOption[],
+    careerGoals: '',
+    specialCircumstances: [] as SpecialCircumstancesOption[],
+    scholarshipPreferences: [] as ScholarshipPreferencesOption[],
   });
+
   const [scholarships, setScholarships] = useState([]);
   const [error, setError] = useState('');
+
+  const [statesOptions, setStatesOptions] = useState<StateOption[]>([]);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+    console.log('STATES imported:', STATES);
+    if (Array.isArray(STATES) && STATES.length > 0) {
+      setStatesOptions(STATES);
+    } else {
+      console.error('STATES array is empty or not properly imported');
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
+    // Validate GPA
     const { min, max } = GPA_SCALES[studentData.gpaScale];
     const gpa = parseFloat(studentData.gpa);
     if (isNaN(gpa) || gpa < min || gpa > max) {
@@ -31,10 +80,38 @@ export default function Scholarships() {
       return;
     }
 
+    // Validate financial need
+    const financialNeed = parseFloat(studentData.financialNeedIncome);
+    if (isNaN(financialNeed) || financialNeed < 0) {
+      setError('Please enter a valid household income.');
+      return;
+    }
+
+    // Validate test scores
+    const invalidScores = studentData.testScores.filter(score => {
+      const testType = score.test as keyof typeof TEST_RANGES;
+      const scoreNum = parseInt(score.score);
+      const range = TEST_RANGES[testType] || TEST_RANGES.Other;
+      return isNaN(scoreNum) || scoreNum < range.min || scoreNum > range.max;
+    });
+
+    if (invalidScores.length > 0) {
+      setError('Please correct the invalid test scores before submitting.');
+      return;
+    }
+
+    // If all validations pass, submit the data
     const res = await fetch('http://127.0.0.1:8000/scholarships', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(studentData),
+      body: JSON.stringify({
+        ...studentData,
+        major: studentData.major?.value,
+        state: studentData.state?.value,
+        demographics: studentData.demographics.map(d => d.value),
+        specialCircumstances: studentData.specialCircumstances.map(s => s.value),
+        scholarshipPreferences: studentData.scholarshipPreferences.map(p => p.value),
+      }),
     });
 
     if (res.ok) {
@@ -56,7 +133,9 @@ export default function Scholarships() {
         <h1 className="text-4xl font-bold text-center text-gray-900 mb-12">Find Scholarships</h1>
         <div className="bg-white shadow-lg rounded-lg p-8 mb-8">
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Academic Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* GPA */}
               <div>
                 <label htmlFor="gpa" className="block text-sm font-medium text-gray-700 mb-1">
                   GPA
@@ -86,20 +165,26 @@ export default function Scholarships() {
                   </select>
                 </div>
               </div>
+
+              {/* Major */}
               <div>
                 <label htmlFor="major" className="block text-sm font-medium text-gray-700 mb-1">
-                  Major
+                  Major / Intended Major
                 </label>
-                <input
+                <Select
                   id="major"
                   name="major"
-                  type="text"
+                  options={MAJORS}
                   value={studentData.major}
-                  onChange={handleInputChange}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                  required
+                  onChange={(selectedOption) => setStudentData({ ...studentData, major: selectedOption })}
+                  className="rounded-md"
+                  classNamePrefix="select"
+                  placeholder="Select Major"
+                  isClearable
                 />
               </div>
+
+              {/* Grade Level */}
               <div>
                 <label htmlFor="gradeLevel" className="block text-sm font-medium text-gray-700 mb-1">
                   Grade Level
@@ -120,36 +205,135 @@ export default function Scholarships() {
                   <option value="Senior">College Senior</option>
                 </select>
               </div>
+
+              {/* State */}
               <div>
                 <label htmlFor="state" className="block text-sm font-medium text-gray-700 mb-1">
                   State
                 </label>
-                <input
-                  id="state"
-                  name="state"
-                  type="text"
-                  value={studentData.state}
-                  onChange={handleInputChange}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                  required
-                />
+                {isClient && (
+                  <Select<StateOption>
+                    id="state"
+                    name="state"
+                    options={STATES}
+                    value={studentData.state}
+                    onChange={(selectedOption) => setStudentData({ ...studentData, state: selectedOption })}
+                    className="rounded-md"
+                    classNamePrefix="select"
+                    placeholder="Select State"
+                    isClearable
+                  />
+                )}
               </div>
             </div>
+
+            {/* Financial Need */}
             <div>
-              <label htmlFor="extracurriculars" className="block text-sm font-medium text-gray-700 mb-1">
-                Extracurricular Activities
+              <label htmlFor="financialNeedIncome" className="block text-sm font-medium text-gray-700 mb-1">
+                Financial Need / Family Income ($)
               </label>
-              <textarea
-                id="extracurriculars"
-                name="extracurriculars"
-                value={studentData.extracurriculars}
+              <input
+                id="financialNeedIncome"
+                name="financialNeedIncome"
+                type="number"
+                step="1000"
+                value={studentData.financialNeedIncome}
                 onChange={handleInputChange}
-                rows={3}
                 className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                placeholder="List your extracurricular activities..."
+                placeholder="Enter your household income"
+                required
               />
             </div>
+
+            {/* Demographics */}
+            <div>
+              <label htmlFor="demographics" className="block text-sm font-medium text-gray-700 mb-1">
+                Demographics
+              </label>
+              <Select
+                id="demographics"
+                name="demographics"
+                options={DEMOGRAPHICS}
+                value={studentData.demographics}
+                onChange={(selectedOptions) => setStudentData({ ...studentData, demographics: selectedOptions || [] })}
+                className="rounded-md"
+                classNamePrefix="select"
+                placeholder="Select Demographics"
+                isMulti
+                isClearable
+              />
+            </div>
+
+            {/* Career Goals */}
+            <div>
+              <label htmlFor="careerGoals" className="block text-sm font-medium text-gray-700 mb-1">
+                Career Goals or Interests
+              </label>
+              <textarea
+                id="careerGoals"
+                name="careerGoals"
+                value={studentData.careerGoals}
+                onChange={handleInputChange}
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                placeholder="Describe your career goals or interests"
+                rows={3}
+                required
+              ></textarea>
+            </div>
+
+            {/* Special Circumstances */}
+            <div>
+              <label htmlFor="specialCircumstances" className="block text-sm font-medium text-gray-700 mb-1">
+                Special Circumstances
+              </label>
+              <Select
+                id="specialCircumstances"
+                name="specialCircumstances"
+                options={SPECIAL_CIRCUMSTANCES}
+                value={studentData.specialCircumstances}
+                onChange={(selectedOptions) => setStudentData({ ...studentData, specialCircumstances: selectedOptions || [] })}
+                className="rounded-md"
+                classNamePrefix="select"
+                placeholder="Select Special Circumstances"
+                isMulti
+                isClearable
+              />
+            </div>
+
+            {/* Scholarship Preferences */}
+            <div>
+              <label htmlFor="scholarshipPreferences" className="block text-sm font-medium text-gray-700 mb-1">
+                Scholarship Preferences
+              </label>
+              <Select
+                id="scholarshipPreferences"
+                name="scholarshipPreferences"
+                options={SCHOLARSHIP_PREFERENCES}
+                value={studentData.scholarshipPreferences}
+                onChange={(selectedOptions) => setStudentData({ ...studentData, scholarshipPreferences: selectedOptions || [] })}
+                className="rounded-md"
+                classNamePrefix="select"
+                placeholder="Select Scholarship Preferences"
+                isMulti
+                isClearable
+              />
+            </div>
+
+            {/* Standardized Test Scores */}
+            <div>
+              <label htmlFor="testScores" className="block text-sm font-medium text-gray-700 mb-1">
+                Standardized Test Scores
+              </label>
+              <TestScores
+                scores={studentData.testScores}
+                onChange={(newScores) => setStudentData({ ...studentData, testScores: newScores })}
+              />
+            </div>
+
+            {/* Error Message */}
             {error && <p className="text-red-500 text-sm">{error}</p>}
+
+            {/* Submit Button */}
             <div>
               <button
                 type="submit"
@@ -161,6 +345,7 @@ export default function Scholarships() {
           </form>
         </div>
 
+        {/* Scholarship Results */}
         {scholarships.length > 0 && (
           <div className="bg-white shadow-lg rounded-lg overflow-hidden">
             <h2 className="text-2xl font-semibold text-gray-800 p-6 bg-gray-50 border-b border-gray-200">
