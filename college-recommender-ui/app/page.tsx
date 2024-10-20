@@ -12,6 +12,16 @@ const GPA_SCALES = {
   '100 Scale': { min: 0, max: 100 },
 };
 
+const INCOME_RANGES = [
+  { value: 'prefer-not-to-say', label: 'Prefer not to say' },
+  { value: '0-30000', label: '$0 - $30,000' },
+  { value: '30001-60000', label: '$30,001 - $60,000' },
+  { value: '60001-90000', label: '$60,001 - $90,000' },
+  { value: '90001-120000', label: '$90,001 - $120,000' },
+  { value: '120001-150000', label: '$120,001 - $150,000' },
+  { value: '150001-plus', label: '$150,001+' },
+];
+
 interface StateOption {
   value: string;
   label: string;
@@ -45,7 +55,7 @@ export default function Scholarships() {
     gradeLevel: '',
     state: null as StateOption | null,
     testScores: [] as { test: string; score: string }[],
-    financialNeedIncome: '',
+    financialNeedIncome: null as { value: string; label: string } | null,
     demographics: [] as DemographicsOption[],
     careerGoals: '',
     specialCircumstances: [] as SpecialCircumstancesOption[],
@@ -81,7 +91,7 @@ export default function Scholarships() {
     }
 
     // Validate financial need
-    const financialNeed = parseFloat(studentData.financialNeedIncome);
+    const financialNeed = parseFloat(studentData.financialNeedIncome?.value);
     if (isNaN(financialNeed) || financialNeed < 0) {
       setError('Please enter a valid household income.');
       return;
@@ -230,18 +240,18 @@ export default function Scholarships() {
             {/* Financial Need */}
             <div>
               <label htmlFor="financialNeedIncome" className="block text-sm font-medium text-gray-700 mb-1">
-                Financial Need / Family Income ($)
+                Financial Need / Family Income (Optional)
               </label>
-              <input
+              <Select
                 id="financialNeedIncome"
                 name="financialNeedIncome"
-                type="number"
-                step="1000"
+                options={INCOME_RANGES}
                 value={studentData.financialNeedIncome}
-                onChange={handleInputChange}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                placeholder="Enter your household income"
-                required
+                onChange={(selectedOption) => setStudentData({ ...studentData, financialNeedIncome: selectedOption })}
+                className="w-full rounded-md"
+                classNamePrefix="select"
+                placeholder="Select income range (optional)"
+                isClearable
               />
             </div>
 
@@ -284,7 +294,7 @@ export default function Scholarships() {
             {/* Special Circumstances */}
             <div>
               <label htmlFor="specialCircumstances" className="block text-sm font-medium text-gray-700 mb-1">
-                Special Circumstances
+                Special Circumstances (if applicable)
               </label>
               <Select
                 id="specialCircumstances"
