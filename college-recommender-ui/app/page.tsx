@@ -47,6 +47,14 @@ interface ScholarshipPreferencesOption {
   label: string;
 }
 
+interface Scholarship {
+  Name: string;
+  GPA: number;
+  Major: string;
+  Award: string;
+  Deadline: string;
+}
+
 export default function Scholarships() {
   const [studentData, setStudentData] = useState({
     gpa: '',
@@ -62,7 +70,7 @@ export default function Scholarships() {
     scholarshipPreferences: [] as ScholarshipPreferencesOption[],
   });
 
-  const [scholarships, setScholarships] = useState([]);
+  const [scholarships, setScholarships] = useState<Scholarship[]>([]);
   const [error, setError] = useState('');
 
   const [statesOptions, setStatesOptions] = useState<StateOption[]>([]);
@@ -83,7 +91,7 @@ export default function Scholarships() {
     setError('');
 
     // Validate GPA
-    const { min, max } = GPA_SCALES[studentData.gpaScale];
+    const { min, max } = GPA_SCALES[studentData.gpaScale as keyof typeof GPA_SCALES];
     const gpa = parseFloat(studentData.gpa);
     if (isNaN(gpa) || gpa < min || gpa > max) {
       setError(`GPA must be between ${min} and ${max} for the selected scale.`);
@@ -91,7 +99,7 @@ export default function Scholarships() {
     }
 
     // Validate financial need
-    const financialNeed = parseFloat(studentData.financialNeedIncome?.value);
+    const financialNeed = parseFloat(studentData.financialNeedIncome?.value ?? '0');
     if (isNaN(financialNeed) || financialNeed < 0) {
       setError('Please enter a valid household income.');
       return;
@@ -111,24 +119,32 @@ export default function Scholarships() {
     }
 
     // If all validations pass, submit the data
-    const res = await fetch('http://127.0.0.1:8000/scholarships', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...studentData,
-        major: studentData.major?.value,
-        state: studentData.state?.value,
-        demographics: studentData.demographics.map(d => d.value),
-        specialCircumstances: studentData.specialCircumstances.map(s => s.value),
-        scholarshipPreferences: studentData.scholarshipPreferences.map(p => p.value),
-      }),
-    });
+    try {
+      const res = await fetch('http://127.0.0.1:8000/scholarships', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          gpa: parseFloat(studentData.gpa),
+          major: studentData.major?.value || '',
+          state: studentData.state?.value || '',
+          demographics: studentData.demographics.map(d => d.value),
+          specialCircumstances: studentData.specialCircumstances.map(s => s.value),
+          scholarshipPreferences: studentData.scholarshipPreferences.map(p => p.value),
+        }),
+      });
 
-    if (res.ok) {
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || 'Failed to fetch scholarships');
+      }
+
       const data = await res.json();
       setScholarships(data);
-    } else {
-      setError('No scholarships found.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to fetch scholarships');
     }
   };
 
@@ -142,6 +158,30 @@ export default function Scholarships() {
       <div className="max-w-4xl mx-auto">
         <h1 className="text-4xl font-bold text-center text-gray-900 mb-12">Find Scholarships</h1>
         <div className="bg-white shadow-lg rounded-lg p-8 mb-8">
+          {/* Add this button before the form */} 
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              onClick={() => setStudentData({
+                gpa: '3.8',
+                gpaScale: '4.0 Unweighted',
+                major: { value: 'Computer Science', label: 'Computer Science' },
+                gradeLevel: 'Freshman',
+                state: { value: 'MA', label: 'Massachusetts' },
+                testScores: [
+                  { test: 'SAT', score: '1500' },
+                  { test: 'ACT', score: '34' }
+                ],
+                financialNeedIncome: { value: '60001-90000', label: '$60,001 - $90,000' },
+                demographics: [{ value: 'First Generation', label: 'First Generation Student' }],
+                careerGoals: 'Interested in pursuing a career in software engineering and artificial intelligence.',
+                specialCircumstances: [],
+                scholarshipPreferences: [],
+              })}
+              className="mb-4 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+            >
+              Fill Test Data (MIT Scholarship)
+            </button>
+          )}
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Academic Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -181,17 +221,19 @@ export default function Scholarships() {
                 <label htmlFor="major" className="block text-sm font-medium text-gray-700 mb-1">
                   Major / Intended Major
                 </label>
-                <Select
-                  id="major"
-                  name="major"
-                  options={MAJORS}
-                  value={studentData.major}
-                  onChange={(selectedOption) => setStudentData({ ...studentData, major: selectedOption })}
-                  className="rounded-md"
-                  classNamePrefix="select"
-                  placeholder="Select Major"
-                  isClearable
-                />
+                {isClient ? (
+                  <Select
+                    id="major"
+                    name="major"
+                    options={MAJORS}
+                    value={studentData.major}
+                    onChange={(selectedOption) => setStudentData({ ...studentData, major: selectedOption })}
+                    className="rounded-md"
+                    classNamePrefix="select"
+                    placeholder="Select Major"
+                    isClearable
+                  />
+                ) : null}
               </div>
 
               {/* Grade Level */}
@@ -242,17 +284,19 @@ export default function Scholarships() {
               <label htmlFor="financialNeedIncome" className="block text-sm font-medium text-gray-700 mb-1">
                 Financial Need / Family Income (Optional)
               </label>
-              <Select
-                id="financialNeedIncome"
-                name="financialNeedIncome"
-                options={INCOME_RANGES}
-                value={studentData.financialNeedIncome}
-                onChange={(selectedOption) => setStudentData({ ...studentData, financialNeedIncome: selectedOption })}
-                className="w-full rounded-md"
-                classNamePrefix="select"
-                placeholder="Select income range (optional)"
-                isClearable
-              />
+              {isClient ? (
+                <Select
+                  id="financialNeedIncome"
+                  name="financialNeedIncome"
+                  options={INCOME_RANGES}
+                  value={studentData.financialNeedIncome}
+                  onChange={(selectedOption) => setStudentData({ ...studentData, financialNeedIncome: selectedOption })}
+                  className="w-full rounded-md"
+                  classNamePrefix="select"
+                  placeholder="Select income range (optional)"
+                  isClearable
+                />
+              ) : null}
             </div>
 
             {/* Demographics */}
@@ -260,18 +304,20 @@ export default function Scholarships() {
               <label htmlFor="demographics" className="block text-sm font-medium text-gray-700 mb-1">
                 Demographics
               </label>
-              <Select
-                id="demographics"
-                name="demographics"
-                options={DEMOGRAPHICS}
-                value={studentData.demographics}
-                onChange={(selectedOptions) => setStudentData({ ...studentData, demographics: selectedOptions || [] })}
-                className="rounded-md"
-                classNamePrefix="select"
-                placeholder="Select Demographics"
-                isMulti
-                isClearable
-              />
+              {isClient ? (
+                <Select
+                  id="demographics"
+                  name="demographics"
+                  options={DEMOGRAPHICS}
+                  value={studentData.demographics}
+                  onChange={(selectedOptions) => setStudentData({ ...studentData, demographics: [...selectedOptions] })}
+                  className="rounded-md"
+                  classNamePrefix="select"
+                  placeholder="Select Demographics"
+                  isMulti
+                  isClearable
+                />
+              ) : null}
             </div>
 
             {/* Career Goals */}
@@ -296,37 +342,41 @@ export default function Scholarships() {
               <label htmlFor="specialCircumstances" className="block text-sm font-medium text-gray-700 mb-1">
                 Special Circumstances (if applicable)
               </label>
-              <Select
-                id="specialCircumstances"
-                name="specialCircumstances"
-                options={SPECIAL_CIRCUMSTANCES}
-                value={studentData.specialCircumstances}
-                onChange={(selectedOptions) => setStudentData({ ...studentData, specialCircumstances: selectedOptions || [] })}
-                className="rounded-md"
-                classNamePrefix="select"
-                placeholder="Select Special Circumstances"
-                isMulti
-                isClearable
-              />
+              {isClient ? (
+                <Select
+                  id="specialCircumstances"
+                  name="specialCircumstances"
+                  options={SPECIAL_CIRCUMSTANCES}
+                  value={studentData.specialCircumstances}
+                  onChange={(selectedOptions) => setStudentData({ ...studentData, specialCircumstances: [...selectedOptions] })}
+                  className="rounded-md"
+                  classNamePrefix="select"
+                  placeholder="Select Special Circumstances"
+                  isMulti
+                  isClearable
+                />
+              ) : null}
             </div>
 
             {/* Scholarship Preferences */}
             <div>
               <label htmlFor="scholarshipPreferences" className="block text-sm font-medium text-gray-700 mb-1">
-                Scholarship Preferences
+                Scholarship Preferences (Optional)
               </label>
-              <Select
-                id="scholarshipPreferences"
-                name="scholarshipPreferences"
-                options={SCHOLARSHIP_PREFERENCES}
-                value={studentData.scholarshipPreferences}
-                onChange={(selectedOptions) => setStudentData({ ...studentData, scholarshipPreferences: selectedOptions || [] })}
-                className="rounded-md"
-                classNamePrefix="select"
-                placeholder="Select Scholarship Preferences"
-                isMulti
-                isClearable
-              />
+              {isClient ? (
+                <Select
+                  id="scholarshipPreferences"
+                  name="scholarshipPreferences"
+                  options={SCHOLARSHIP_PREFERENCES}
+                  value={studentData.scholarshipPreferences}
+                  onChange={(selectedOptions) => setStudentData({ ...studentData, scholarshipPreferences: [...selectedOptions] })}
+                  className="rounded-md"
+                  classNamePrefix="select"
+                  placeholder="Select Scholarship Preferences"
+                  isMulti
+                  isClearable
+                />
+              ) : null}
             </div>
 
             {/* Standardized Test Scores */}
@@ -366,7 +416,9 @@ export default function Scholarships() {
                 <li key={index} className="p-6 hover:bg-gray-50 transition duration-150 ease-in-out">
                   <div className="flex justify-between items-center">
                     <div className="text-lg font-medium text-indigo-600">{scholarship.Name}</div>
-                    <div className="text-lg font-semibold text-gray-700">Award: ${scholarship.Award}</div>
+                    <div className="text-lg font-semibold text-gray-700">
+                      Award: {scholarship.Award.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    </div>
                   </div>
                   <div className="mt-2 text-sm text-gray-500">Deadline: {scholarship.Deadline}</div>
                 </li>
